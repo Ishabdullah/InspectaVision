@@ -1,4 +1,4 @@
 [submodule "apps/android/app/src/main/cpp/llama.cpp"]
 	path = apps/android/app/src/main/cpp/llama.cpp
 	url = https://github.com/ggerganov/llama.cpp.git
-	branch = b3765
+	branch = v0.0.1
