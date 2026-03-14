@@ -8,6 +8,8 @@ android {
     namespace = "com.inspectavision.app"
     compileSdk = 35
 
+    ndkVersion = "26.1.10909125"
+
     defaultConfig {
         applicationId = "com.inspectavision.app"
         minSdk = 26
