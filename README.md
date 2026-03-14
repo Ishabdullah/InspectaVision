@@ -1,5 +1,7 @@
 # Inspectavision - AI-Powered Home Inspection Platform
 
+[![Live Demo](https://img.shields.io/badge/Live-Demo-blue?style=for-the-badge)](https://inspectavisionai.github.io/InspectaVision/)
+
 Inspectavision is a production-grade, AI-first home inspection platform designed for licensed home inspectors. It replaces traditional template-based tools with a workflow powered by Gemini Vision and InterNACHI Standards of Practice RAG.
 
 ## Architecture
