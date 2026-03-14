@@ -15,16 +15,11 @@ on:
       build_type:
         description: 'Build type (debug/release)'
         required: true
-        default: 'release'
+        default: 'debug'
         type: choice
         options:
           - debug
           - release
-      deploy_via_ssh:
-        description: 'Deploy APK via SSH after build'
-        required: false
-        default: 'false'
-        type: boolean
 
 env:
   ANDROID_VERSION: '35'
@@ -36,8 +31,8 @@ jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    
+    timeout-minutes: 90
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -52,17 +47,25 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: 9.0
-          packages: 'platform-tools platforms;android-${{ env.ANDROID_VERSION }} build-tools;${{ env.BUILD_TOOLS_VERSION }} ndk;${{ env.NDK_VERSION }}'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3.2.4
+
+      - name: Install required SDK components
+        run: |
+          sdkmanager --licenses
+          sdkmanager "platform-tools" \
+            "platforms;android-${{ env.ANDROID_VERSION }}" \
+            "build-tools;${{ env.BUILD_TOOLS_VERSION }}" \
+            "ndk;${{ env.NDK_VERSION }}" \
+            "cmake;3.22.1"
 
       - name: Clone llama.cpp
         working-directory: apps/android/app/src/main/cpp
         run: |
           if [ ! -d "llama.cpp" ]; then
             git clone --depth 1 --branch b4426 https://github.com/ggerganov/llama.cpp.git
+          else
+            echo "llama.cpp already exists"
           fi
 
       - name: Set up Gradle
@@ -77,25 +80,17 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" >> local.properties
           echo "ndk.dir=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> local.properties
           echo "cmake.dir=$ANDROID_HOME/cmake/3.22.1" >> local.properties
-
-      - name: Build Native Libraries (CMake)
-        working-directory: apps/android
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
-        run: |
-          ./gradlew \
-            -Pandroid.injected.build.model.disableBuildOutputOptimization=true \
-            externalNativeBuildDebug
+          cat local.properties
 
       - name: Build Debug APK
-        if: ${{ github.event.inputs.build_type != 'release' && github.event_name != 'pull_request' }}
+        if: ${{ github.event.inputs.build_type != 'release' }}
         working-directory: apps/android
         run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace --info
           echo "APK_FILE=apps/android/app/build/outputs/apk/debug/app-debug.apk" >> $GITHUB_ENV
 
       - name: Build Release APK
-        if: ${{ github.event.inputs.build_type == 'release' || github.event_name == 'pull_request' }}
+        if: ${{ github.event.inputs.build_type == 'release' }}
         working-directory: apps/android
         env:
           RELEASE_KEYSTORE: ${{ secrets.RELEASE_KEYSTORE }}
@@ -106,7 +101,6 @@ jobs:
           if [ -n "$RELEASE_KEYSTORE" ]; then
             echo "$RELEASE_KEYSTORE" | base64 -d > keystore.jks
             ./gradlew assembleRelease \
-              -Pandroid.injected.build.model.disableBuildOutputOptimization=true \
               --no-daemon --stacktrace \
               -Pandroid.injected.signing.store.file=../keystore.jks \
               -Pandroid.injected.signing.store.password=$RELEASE_KEYSTORE_PASSWORD \
@@ -122,7 +116,7 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: inspectavision-apk
+          name: inspectavision-apk-${{ github.event.inputs.build_type || 'debug' }}
           path: ${{ env.APK_FILE }}
           retention-days: 30
 
@@ -148,51 +142,8 @@ jobs:
             echo "- **Size:** $(du -h ${{ env.APK_FILE }} | cut -f1)" >> $GITHUB_STEP_SUMMARY
             echo "- **Path:** \`${{ env.APK_FILE }}\`" >> $GITHUB_STEP_SUMMARY
             echo "- **SHA256:** $(sha256sum ${{ env.APK_FILE }} | cut -d' ' -f1)" >> $GITHUB_STEP_SUMMARY
-          fi
-
-  deploy_ssh:
-    name: Deploy via SSH
-    needs: build
-    if: ${{ github.event.inputs.deploy_via_ssh == 'true' || (github.ref == 'refs/heads/main' && github.event_name == 'push') }}
-    runs-on: ubuntu-latest
-    environment: production
-    
-    steps:
-      - name: Download APK Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: inspectavision-apk
-          path: ./apk
-
-      - name: Set up SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
-          echo "Host deploy-server" >> ~/.ssh/config
-          echo "  HostName ${{ secrets.SSH_HOST }}" >> ~/.ssh/config
-          echo "  User ${{ secrets.SSH_USER }}" >> ~/.ssh/config
-          echo "  IdentityFile ~/.ssh/id_ed25519" >> ~/.ssh/config
-          echo "  StrictHostKeyChecking no" >> ~/.ssh/config
-
-      - name: Deploy APK to Server
-        run: |
-          BUILD_DIR="/home/${{ secrets.SSH_USER }}/deploys/inspectavision/android/$(date +%Y%m%d_%H%M%S)"
-          ssh deploy-server "mkdir -p $BUILD_DIR"
-          scp ./apk/*.apk deploy-server:$BUILD_DIR/
-          ssh deploy-server "ln -sf $BUILD_DIR /home/${{ secrets.SSH_USER }}/deploys/inspectavision/android/latest"
-          echo "✅ Deployed to: $BUILD_DIR"
-
-      - name: Notify Deployment
-        if: always()
-        run: |
-          STATUS="${{ job.status }}"
-          if [ "$STATUS" == "success" ]; then
-            echo "✅ Deployment completed successfully!"
           else
-            echo "❌ Deployment failed!"
-            exit 1
+            echo "- **Status:** Build completed, APK not found" >> $GITHUB_STEP_SUMMARY
           fi
 
   create_release:
@@ -202,16 +153,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
       - name: Download APK Artifact
         uses: actions/download-artifact@v4
         with:
-          name: inspectavision-apk
+          name: inspectavision-apk-release
           path: ./apk
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: ./apk/*.apk
           generate_release_notes: true
