@@ -74,9 +74,16 @@ jobs:
             echo "llama.cpp already exists"
           fi
 
-      - name: Set up Gradle
+      - name: Setup Gradle Wrapper
         working-directory: apps/android
         run: |
+          # Download gradle wrapper jar if missing
+          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            echo "Downloading Gradle Wrapper JAR..."
+            mkdir -p gradle/wrapper
+            curl -L -o gradle/wrapper/gradle-wrapper.jar \
+              https://raw.githubusercontent.com/gradle/gradle/v8.7.0/gradle/wrapper/gradle-wrapper.jar
+          fi
           chmod +x gradlew
           ./gradlew --version
 
