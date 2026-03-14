@@ -1,0 +1,218 @@
+name: Android Build
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+    paths:
+      - 'apps/android/**'
+      - '.github/workflows/android-build.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'apps/android/**'
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type (debug/release)'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - debug
+          - release
+      deploy_via_ssh:
+        description: 'Deploy APK via SSH after build'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  ANDROID_VERSION: '35'
+  BUILD_TOOLS_VERSION: '34.0.0'
+  NDK_VERSION: '26.1.10909125'
+  JAVA_VERSION: '17'
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 9.0
+          packages: 'platform-tools platforms;android-${{ env.ANDROID_VERSION }} build-tools;${{ env.BUILD_TOOLS_VERSION }} ndk;${{ env.NDK_VERSION }}'
+
+      - name: Clone llama.cpp
+        working-directory: apps/android/app/src/main/cpp
+        run: |
+          if [ ! -d "llama.cpp" ]; then
+            git clone --depth 1 --branch b4426 https://github.com/ggerganov/llama.cpp.git
+          fi
+
+      - name: Set up Gradle
+        working-directory: apps/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --version
+
+      - name: Create local.properties
+        working-directory: apps/android
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" >> local.properties
+          echo "ndk.dir=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> local.properties
+          echo "cmake.dir=$ANDROID_HOME/cmake/3.22.1" >> local.properties
+
+      - name: Build Native Libraries (CMake)
+        working-directory: apps/android
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
+        run: |
+          ./gradlew \
+            -Pandroid.injected.build.model.disableBuildOutputOptimization=true \
+            externalNativeBuildDebug
+
+      - name: Build Debug APK
+        if: ${{ github.event.inputs.build_type != 'release' && github.event_name != 'pull_request' }}
+        working-directory: apps/android
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace
+          echo "APK_FILE=apps/android/app/build/outputs/apk/debug/app-debug.apk" >> $GITHUB_ENV
+
+      - name: Build Release APK
+        if: ${{ github.event.inputs.build_type == 'release' || github.event_name == 'pull_request' }}
+        working-directory: apps/android
+        env:
+          RELEASE_KEYSTORE: ${{ secrets.RELEASE_KEYSTORE }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$RELEASE_KEYSTORE" ]; then
+            echo "$RELEASE_KEYSTORE" | base64 -d > keystore.jks
+            ./gradlew assembleRelease \
+              -Pandroid.injected.build.model.disableBuildOutputOptimization=true \
+              --no-daemon --stacktrace \
+              -Pandroid.injected.signing.store.file=../keystore.jks \
+              -Pandroid.injected.signing.store.password=$RELEASE_KEYSTORE_PASSWORD \
+              -Pandroid.injected.signing.key.alias=$RELEASE_KEY_ALIAS \
+              -Pandroid.injected.signing.key.password=$RELEASE_KEY_PASSWORD
+            echo "APK_FILE=apps/android/app/build/outputs/apk/release/app-release.apk" >> $GITHUB_ENV
+          else
+            echo "No signing config found, building unsigned release APK"
+            ./gradlew assembleRelease --no-daemon --stacktrace
+            echo "APK_FILE=apps/android/app/build/outputs/apk/release/app-release-unsigned.apk" >> $GITHUB_ENV
+          fi
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: inspectavision-apk
+          path: ${{ env.APK_FILE }}
+          retention-days: 30
+
+      - name: Generate Build Info
+        id: build_info
+        run: |
+          echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+          echo "commit_sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+
+      - name: Create Build Summary
+        run: |
+          echo "## 📱 InspectaVision Android Build" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Information" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Time:** ${{ steps.build_info.outputs.build_time }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type:** ${{ github.event.inputs.build_type || 'debug' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### APK Details" >> $GITHUB_STEP_SUMMARY
+          if [ -f "${{ env.APK_FILE }}" ]; then
+            echo "- **Size:** $(du -h ${{ env.APK_FILE }} | cut -f1)" >> $GITHUB_STEP_SUMMARY
+            echo "- **Path:** \`${{ env.APK_FILE }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **SHA256:** $(sha256sum ${{ env.APK_FILE }} | cut -d' ' -f1)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  deploy_ssh:
+    name: Deploy via SSH
+    needs: build
+    if: ${{ github.event.inputs.deploy_via_ssh == 'true' || (github.ref == 'refs/heads/main' && github.event_name == 'push') }}
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Download APK Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: inspectavision-apk
+          path: ./apk
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "Host deploy-server" >> ~/.ssh/config
+          echo "  HostName ${{ secrets.SSH_HOST }}" >> ~/.ssh/config
+          echo "  User ${{ secrets.SSH_USER }}" >> ~/.ssh/config
+          echo "  IdentityFile ~/.ssh/id_ed25519" >> ~/.ssh/config
+          echo "  StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Deploy APK to Server
+        run: |
+          BUILD_DIR="/home/${{ secrets.SSH_USER }}/deploys/inspectavision/android/$(date +%Y%m%d_%H%M%S)"
+          ssh deploy-server "mkdir -p $BUILD_DIR"
+          scp ./apk/*.apk deploy-server:$BUILD_DIR/
+          ssh deploy-server "ln -sf $BUILD_DIR /home/${{ secrets.SSH_USER }}/deploys/inspectavision/android/latest"
+          echo "✅ Deployed to: $BUILD_DIR"
+
+      - name: Notify Deployment
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" == "success" ]; then
+            echo "✅ Deployment completed successfully!"
+          else
+            echo "❌ Deployment failed!"
+            exit 1
+          fi
+
+  create_release:
+    name: Create GitHub Release
+    needs: build
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Download APK Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: inspectavision-apk
+          path: ./apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./apk/*.apk
+          generate_release_notes: true
+          make_latest: true

@@ -10,7 +10,11 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "android:dev": "cd apps/android && ./gradlew assembleDebug",
+    "android:build": "cd apps/android && ./gradlew assembleRelease",
+    "android:clean": "cd apps/android && ./gradlew clean",
+    "android:install": "cd apps/android && ./gradlew installDebug"
   },
   "devDependencies": {
     "turbo": "latest",
