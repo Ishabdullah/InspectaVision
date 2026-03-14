@@ -47,12 +47,18 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
+      - name: Enable KVM group perms (for emulator if needed)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3.2.4
+        uses: android-actions/setup-android@v3
 
       - name: Install required SDK components
         run: |
-          sdkmanager --licenses
+          sdkmanager --licenses <<< y
           sdkmanager "platform-tools" \
             "platforms;android-${{ env.ANDROID_VERSION }}" \
             "build-tools;${{ env.BUILD_TOOLS_VERSION }}" \
@@ -86,7 +92,7 @@ jobs:
         if: ${{ github.event.inputs.build_type != 'release' }}
         working-directory: apps/android
         run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace --info
+          ./gradlew assembleDebug --no-daemon --stacktrace
           echo "APK_FILE=apps/android/app/build/outputs/apk/debug/app-debug.apk" >> $GITHUB_ENV
 
       - name: Build Release APK
