@@ -1,0 +1,23 @@
+{
+  "name": "@inspectavision/ai",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "scrape": "tsx src/run_scraper.ts",
+    "ingest": "tsx src/ingest_to_vector_store.ts"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "axios": "^1.13.6",
+    "cheerio": "^1.2.0",
+    "chromadb": "^1.10.5",
+    "dotenv": "^16.6.1",
+    "tsx": "^4.21.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.37",
+    "typescript": "^5.9.3"
+  }
+}

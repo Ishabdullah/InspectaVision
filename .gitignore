@@ -1,0 +1,57 @@
+# Node
+node_modules/
+dist/
+build/
+.turbo/
+apps/web/dist/
+apps/api/dist/
+apps/mobile/.expo/
+apps/mobile/node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Database & Storage
+*.db
+*.db-journal
+uploads/
+internachi_sop.json
+
+# Environment
+.env
+.env.local
+
+# OS / System Files
+OneDrive/
+NTUSER.DAT*
+...
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+ntuser.dat*
+ntuser.ini
+AppData/
+Contacts/
+Desktop/
+Documents/
+Downloads/
+Favorites/
+Links/
+Music/
+Pictures/
+Saved Games/
+Searches/
+Videos/
+Wavesor Software/
+.ssh/
+.gemini/
+.cache/
+.gitconfig
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
