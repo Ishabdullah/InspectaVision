@@ -9,7 +9,6 @@
 #include <cstring>
 
 #include "llama.h"
-#include "ggml.h"
 
 #define LOG_TAG "InspectaVision-LLM"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -41,23 +40,19 @@ static jstring string_to_jstring(JNIEnv* env, const std::string& str) {
     return env->NewStringUTF(str.c_str());
 }
 
-// Token callback for llama.cpp
-static bool llm_token_callback(llama_token token, void* user_data) {
-    if (token == llama_token_eos(llama_get_model(g_ctx))) {
-        return false; // Stop generation
+// Get token as string
+static std::get_token_str(llama_context* ctx, llama_token token) {
+    std::vector<char> result(256);
+    int n_chars = llama_token_to_piece(ctx, token, result.data(), result.size(), 0, false);
+    if (n_chars < 0) {
+        result.resize(-n_chars);
+        n_chars = llama_token_to_piece(ctx, token, result.data(), result.size(), 0, false);
     }
-    
-    if (g_stop_generation) {
-        return false;
+    if (n_chars > 0) {
+        result.resize(n_chars);
+        return std::string(result.data(), result.size());
     }
-    
-    std::string token_str = llama_token_to_piece(g_ctx, token);
-    
-    if (g_token_callback) {
-        g_token_callback(token_str);
-    }
-    
-    return true;
+    return "";
 }
 
 extern "C" {
@@ -102,8 +97,6 @@ Java_com_inspectavision_llm_LlamaCppBridge_nativeInitialize(
     // Model parameters
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = n_gpu_layers;
-    model_params.progress_callback = nullptr;
-    model_params.progress_callback_user_data = nullptr;
     
     // Context parameters
     llama_context_params ctx_params = llama_context_default_params();
@@ -111,9 +104,6 @@ Java_com_inspectavision_llm_LlamaCppBridge_nativeInitialize(
     ctx_params.n_batch = 512;
     ctx_params.n_threads = static_cast<uint32_t>(n_threads);
     ctx_params.n_threads_batch = static_cast<uint32_t>(n_threads);
-    ctx_params.use_mmap = true;
-    ctx_params.use_mlock = false;
-    ctx_params.embeddings = false;
     
     // Load the model
     LOGI("Loading model with n_ctx=%d, n_threads=%d", n_ctx, n_threads);
@@ -126,7 +116,7 @@ Java_com_inspectavision_llm_LlamaCppBridge_nativeInitialize(
     }
     
     // Create context
-    g_ctx = llama_new_context_with_model(g_model, ctx_params);
+    g_ctx = llama_init_from_model(g_model, ctx_params);
     
     if (!g_ctx) {
         LOGE("Failed to create context");
@@ -163,7 +153,7 @@ Java_com_inspectavision_llm_LlamaCppBridge_nativeGetModelInfo(
     std::stringstream ss;
     ss << "Model loaded successfully\n";
     ss << "Vocab type: " << llama_vocab_type(g_model) << "\n";
-    ss << "Pool type: " << llama_pooling_type(g_ctx) << "\n";
+    ss << "Model size: " << llama_model_n_params(g_model) << " params\n";
     
     return string_to_jstring(env, ss.str());
 }
@@ -244,8 +234,8 @@ Java_com_inspectavision_llm_LlamaCppBridge_nativeGenerate(
     // Run generation in a separate thread
     std::thread([prompt_str, max_tokens, temperature, top_p, top_k]() {
         // Tokenize the prompt
-        std::vector<llama_token> tokens;
-        tokens.resize(prompt_str.size() + 256); // Over-allocate
+        const int n_prompt_max = 4096;
+        std::vector<llama_token> tokens(n_prompt_max);
         
         int32_t n_tokens = llama_tokenize(
             llama_get_model(g_ctx),
@@ -268,12 +258,20 @@ Java_com_inspectavision_llm_LlamaCppBridge_nativeGenerate(
         
         tokens.resize(n_tokens);
         
-        // Create batch
-        llama_batch batch = llama_batch_get_one(tokens.data(), tokens.size());
+        // Initialize sampler
+        llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
+        sparams.no_perf = false;
+        
+        llama_sampler_chain* smpl = llama_sampler_chain_init(sparams);
+        llama_sampler_chain_add(smpl, llama_sampler_init_top_k(top_k, 1));
+        llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p, 1));
+        llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
+        llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
         
         // Decode the prompt
-        if (llama_decode(g_ctx, batch) != 0) {
+        if (llama_decode(g_ctx, llama_batch_get_one(tokens.data(), n_tokens)) != 0) {
             LOGE("Failed to decode prompt");
+            llama_sampler_chain_free(smpl);
             if (g_completion_callback) {
                 g_completion_callback(false);
             }
@@ -281,52 +279,43 @@ Java_com_inspectavision_llm_LlamaCppBridge_nativeGenerate(
             return;
         }
         
-        // Sampling parameters
-        llama_sampling_params sparams;
-        sparams.temp = temperature;
-        sparams.top_p = top_p;
-        sparams.top_k = top_k;
-        sparams.penalty_last_n = 64;
-        sparams.penalty_repeat = 1.0f;
-        sparams.penalty_freq = 0.0f;
-        sparams.penalty_present = 0.0f;
-        
-        llama_sampling_context* ctx_sampling = llama_sampling_init(sparams);
-        
         int32_t n_decode = 0;
-        llama_token new_token_id;
+        const int32_t n_ctx = llama_n_ctx(g_ctx);
         
         // Generation loop
         while (n_decode < max_tokens && !g_stop_generation) {
             // Sample the next token
-            new_token_id = llama_sampling_sample(ctx_sampling, g_ctx, nullptr, 0);
+            llama_token new_token_id = llama_sampler_sample(smpl, g_ctx, -1);
             
             // Check for EOS
-            if (llama_vocab_type(llama_get_model(g_ctx)) == LLAMA_VOCAB_TYPE_WPM) {
-                if (new_token_id == llama_token_eos(llama_get_model(g_ctx))) {
-                    break;
-                }
-            }
-            
-            // Call token callback
-            if (!llm_token_callback(new_token_id, nullptr)) {
+            if (new_token_id == llama_token_eos(llama_get_model(g_ctx))) {
                 break;
             }
             
-            // Update sampling context
-            llama_sampling_accept(ctx_sampling, g_ctx, new_token_id, true);
+            // Get token string
+            std::string token_str = get_token_str(g_ctx, new_token_id);
+            
+            // Call token callback
+            if (g_token_callback) {
+                g_token_callback(token_str);
+            }
             
             // Decode the new token
-            batch = llama_batch_get_one(&new_token_id, 1);
-            if (llama_decode(g_ctx, batch) != 0) {
+            if (llama_decode(g_ctx, llama_batch_get_one(&new_token_id, 1)) != 0) {
                 LOGE("Decode failed");
                 break;
             }
             
             n_decode++;
+            
+            // Check context limit
+            if (llama_get_kv_cache_used_cells(g_ctx) >= n_ctx) {
+                LOGW("Context limit reached");
+                break;
+            }
         }
         
-        llama_sampling_free(ctx_sampling);
+        llama_sampler_chain_free(smpl);
         
         LOGI("Generation completed, tokens decoded: %d", n_decode);
         
@@ -395,12 +384,9 @@ Java_com_inspectavision_llm_LlamaCppBridge_nativeGetMemoryInfo(
         return string_to_jstring(env, "No context");
     }
     
-    struct llama_memory_usage mem;
-    llama_get_memory_usage(g_ctx, &mem);
-    
     std::stringstream ss;
-    ss << "Total RAM: " << (mem.total_ram / 1024 / 1024) << " MB\n";
-    ss << "Used RAM: " << (mem.used_ram / 1024 / 1024) << " MB";
+    ss << "Context size: " << llama_n_ctx(g_ctx) << "\n";
+    ss << "KV cache used: " << llama_get_kv_cache_used_cells(g_ctx) << " cells";
     
     return string_to_jstring(env, ss.str());
 }
