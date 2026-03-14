@@ -1,301 +1,228 @@
-# InspectaVision Android App
+# InspectaVision Android - Offline AI Home Inspection
 
-AI-powered home inspection Android application with on-device LLM inference using llama.cpp and GGUF models.
+**100% Offline - No Server Required**
 
-## Features
+InspectaVision Android is a completely standalone home inspection app that runs AI analysis directly on your device using llama.cpp. No internet connection, no API keys, no servers - just install and use.
 
-- **Offline AI Analysis**: Run inspection analysis completely offline using local GGUF models
-- **Camera Integration**: Capture photos directly within the app for analysis
-- **Streaming Responses**: Real-time token streaming during AI generation
-- **Model Selection**: Load any GGUF model from your device storage
-- **Findings Management**: Save and organize inspection findings
-- **Dark Mode**: Full dark/light theme support
+## 📱 Features
 
-## Architecture
+- **100% Offline**: Everything runs on your device using llama.cpp
+- **GGUF Model Support**: Load any GGUF format model (Llama, Phi, Qwen, etc.)
+- **Camera Integration**: Capture photos for AI analysis
+- **Streaming Responses**: Real-time token generation
+- **Findings Management**: Save and organize inspection results
+- **Dark/Light Theme**: Material 3 design
 
-```
-apps/android/
-├── app/
-│   ├── src/main/
-│   │   ├── java/com/inspectavision/
-│   │   │   ├── llm/
-│   │   │   │   └── LlamaCppBridge.kt      # JNI bridge to llama.cpp
-│   │   │   ├── ui/
-│   │   │   │   ├── navigation/            # Compose Navigation
-│   │   │   │   ├── screens/               # App screens
-│   │   │   │   └── theme/                 # Material 3 theme
-│   │   │   ├── MainActivity.kt
-│   │   │   └── InspectaVisionApplication.kt
-│   │   ├── cpp/
-│   │   │   ├── CMakeLists.txt             # Native build config
-│   │   │   ├── jni_bridge.cpp             # JNI implementation
-│   │   │   └── llama.cpp/                 # llama.cpp submodule
-│   │   ├── AndroidManifest.xml
-│   │   └── res/                           # Android resources
-│   ├── build.gradle.kts
-│   └── proguard-rules.pro
-├── gradle/
-│   ├── wrapper/
-│   │   └── gradle-wrapper.properties
-│   └── libs.versions.toml
-├── build.gradle.kts
-├── settings.gradle.kts
-└── gradle.properties
-```
+## 📥 Installation
 
-## Prerequisites
+### Download APK
 
-- **Android Studio**: Hedgehog (2023.1.1) or newer
-- **NDK**: 26.1.10909125
-- **CMake**: 3.22.1
-- **JDK**: 17
-- **Android SDK**: API 35 (target), API 26 (minimum)
+Get the latest APK from [GitHub Releases](https://github.com/Ishabdullah/InspectaVision/releases) or build it yourself.
 
-## Getting GGUF Models
-
-Download GGUF format models from Hugging Face or other sources:
-
-**Recommended models for mobile:**
-- [Llama-3.2-1B-Instruct-GGUF](https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF)
-- [Llama-3.2-3B-Instruct-GGUF](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF)
-- [Phi-3-mini-4k-instruct-GGUF](https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF)
-- [Qwen2.5-1.5B-Instruct-GGUF](https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF)
-
-**Model placement:**
-```
-/sdcard/models/          # Primary location
-/sdcard/Download/models/ # Alternative location
-```
-
-## Building
-
-### Local Build
+### Install
 
 ```bash
-# Navigate to Android directory
+# Enable "Install from Unknown Sources" in Android settings
+# Then install the APK
+adb install app-release.apk
+```
+
+## 📂 Setting Up Models
+
+### Step 1: Download a GGUF Model
+
+Download a GGUF model from Hugging Face:
+
+**Recommended Models (for most phones):**
+| Model | Size | RAM Needed | Download |
+|-------|------|------------|----------|
+| Llama-3.2-1B-Instruct Q4_K_M | ~1.3 GB | 2+ GB | [Download](https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF) |
+| Phi-3-mini-4k-instruct Q4_K_M | ~2.4 GB | 4+ GB | [Download](https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF) |
+| Qwen2.5-1.5B-Instruct Q4_K_M | ~1.8 GB | 3+ GB | [Download](https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF) |
+
+**For powerful phones (8+ GB RAM):**
+| Model | Size | RAM Needed | Download |
+|-------|------|------------|----------|
+| Llama-3.2-3B-Instruct Q4_K_M | ~2.8 GB | 6+ GB | [Download](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF) |
+| Mistral-7B-Instruct Q4_K_M | ~4.4 GB | 8+ GB | [Download](https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF) |
+
+### Step 2: Place Model on Your Phone
+
+**Option A: Using USB Cable**
+1. Connect your phone to computer
+2. Copy the `.gguf` file to:
+   - `/sdcard/Download/` (easiest)
+   - `/sdcard/models/` (create this folder)
+
+**Option B: Download Directly on Phone**
+1. Open browser on your phone
+2. Download the GGUF file directly
+3. It will save to Downloads folder
+
+### Step 3: Load Model in App
+
+1. Open InspectaVision app
+2. Tap the folder icon (top right)
+3. Your model should appear automatically
+4. Tap on the model to select it
+5. Tap "Load Model"
+6. Wait 10-30 seconds for loading
+
+## 📸 Using the App
+
+### Analyze a Photo
+
+1. **Home Screen** → Tap "New Inspection"
+2. **Camera** → Take a photo of the area to inspect
+3. **Select Category** → Choose: Roof, Electrical, Plumbing, etc.
+4. **Run AI Analysis** → Tap the button
+5. **Review Results** → AI will describe issues and recommendations
+6. **Save Finding** → Tap save to add to your findings list
+
+### View Saved Findings
+
+1. **Home Screen** → Tap "Saved Findings"
+2. See all your inspection findings organized by severity
+3. Filter by: Safety, Major, Minor, Maintenance
+4. Export or share findings
+
+### Settings
+
+Access Settings to adjust:
+- **Context Size**: More = better understanding, uses more RAM
+- **CPU Threads**: More = faster, but more battery
+- **Temperature**: Higher = more creative, Lower = more focused
+- **Max Tokens**: Limit response length
+
+## 🔧 Building from Source
+
+### Prerequisites
+
+- Android Studio Hedgehog (2023.1.1) or newer
+- JDK 17
+- Android NDK 26.1+
+- Android SDK API 35
+
+### Build Steps
+
+```bash
+# Clone the repository
+git clone https://github.com/Ishabdullah/InspectaVision.git
+cd InspectaVision
+
+# Initialize llama.cpp submodule
+git submodule update --init --recursive
+
+# Or run the setup script
 cd apps/android
+./setup-android.sh
 
 # Build debug APK
 ./gradlew assembleDebug
 
-# Build release APK (requires signing)
+# Build release APK (unsigned)
 ./gradlew assembleRelease
 
 # Install on connected device
 ./gradlew installDebug
-
-# Clean build
-./gradlew clean
 ```
 
-### From Root
+### APK Location
 
-```bash
-# Using npm scripts
-npm run android:dev      # Build debug
-npm run android:build    # Build release
-npm run android:clean    # Clean
-npm run android:install  # Install on device
-```
+After building:
+- **Debug**: `apps/android/app/build/outputs/apk/debug/app-debug.apk`
+- **Release**: `apps/android/app/build/outputs/apk/release/app-release.apk`
 
-### Build Configuration
+## 📊 Performance
 
-Edit `gradle.properties` to customize:
+### Expected Speed (tokens/second)
 
-```properties
-# Memory settings
-org.gradle.jvmargs=-Xmx4096m
+| Phone | Snapdragon 8 Gen 2 | Snapdragon 865 | Snapdragon 778G |
+|-------|-------------------|----------------|-----------------|
+| **1B Q4** | ~30 tok/s | ~15 tok/s | ~10 tok/s |
+| **3B Q4** | ~15 tok/s | ~7 tok/s | ~4 tok/s |
+| **7B Q4** | ~6 tok/s | ~3 tok/s | ~2 tok/s |
 
-# NDK version
-android.ndk.version=26.1.10909125
+### RAM Requirements
 
-# CMake version
-android.cmake.version=3.22.1
-```
+| Model Size | Minimum RAM | Recommended RAM |
+|------------|-------------|-----------------|
+| 1B Q4 | 2 GB | 4 GB |
+| 3B Q4 | 4 GB | 6 GB |
+| 7B Q4 | 8 GB | 12 GB |
 
-## GitHub Actions Build
+## 🛠️ Troubleshooting
 
-The app automatically builds on push to `main` branch.
+### "Model Fails to Load"
 
-### Manual Trigger
-
-1. Go to Actions → Android Build
-2. Click "Run workflow"
-3. Select build type (debug/release)
-4. Optionally enable SSH deployment
-
-### Required Secrets for Release Build
-
-```bash
-# In GitHub Repository Settings → Secrets → Actions
-RELEASE_KEYSTORE           # Base64 encoded .jks file
-RELEASE_KEYSTORE_PASSWORD  # Keystore password
-RELEASE_KEY_ALIAS          # Key alias
-RELEASE_KEY_PASSWORD       # Key password
-```
-
-### SSH Deployment Setup
-
-See [SSH_DEPLOYMENT.md](SSH_DEPLOYMENT.md) for detailed setup instructions.
-
-Required secrets:
-- `SSH_HOST` - Deployment server hostname
-- `SSH_USER` - SSH username
-- `SSH_PRIVATE_KEY` - Private key for authentication
-
-## Native Library Build
-
-The llama.cpp native library is built automatically during the Android build process.
-
-### Manual Native Build
-
-```bash
-cd apps/android/app/src/main/cpp
-
-# Clone llama.cpp if not present
-git clone --depth 1 --branch b4426 https://github.com/ggerganov/llama.cpp.git
-
-# Build with CMake
-mkdir build && cd build
-cmake .. -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-         -DANDROID_ABI=arm64-v8a \
-         -DANDROID_PLATFORM=android-26 \
-         -DGGML_METAL=OFF \
-         -DGGML_OPENMP=OFF
-cmake --build .
-```
-
-### Supported ABIs
-
-- `arm64-v8a` (primary target)
-- `armeabi-v7a` (legacy devices)
-- `x86_64` (emulators)
-
-## Usage
-
-### First Launch
-
-1. Open the app
-2. Navigate to Model Selector (folder icon)
-3. Select a GGUF model from your device
-4. Wait for model to load (may take 10-30 seconds)
-
-### Analyzing Photos
-
-1. From Home, tap "New Inspection"
-2. Capture or select a photo
-3. Choose the inspection category (Roof, Electrical, etc.)
-4. Tap "Run AI Analysis"
-5. Review the streaming analysis results
-6. Save findings for your report
-
-### Settings
-
-Access Settings to configure:
-- Context size (memory vs. capability tradeoff)
-- CPU threads (performance tuning)
-- Temperature (creativity vs. determinism)
-- Max tokens (response length)
-
-## Performance Guidelines
-
-### Memory Usage
-
-| Model Size | RAM Required | Recommended Devices |
-|------------|--------------|---------------------|
-| 1B Q4_K_M  | ~1 GB        | All devices         |
-| 3B Q4_K_M  | ~2.5 GB      | Mid-range+          |
-| 7B Q4_K_M  | ~5 GB        | High-end only       |
-
-### Inference Speed
-
-Expected tokens/second on different hardware:
-
-| Device | Snapdragon 8 Gen 2 | Snapdragon 865 | Emulator |
-|--------|-------------------|----------------|----------|
-| 1B Q4  | ~30 tok/s         | ~15 tok/s      | ~5 tok/s |
-| 3B Q4  | ~15 tok/s         | ~7 tok/s       | ~2 tok/s |
-| 7B Q4  | ~6 tok/s          | ~3 tok/s       | ~1 tok/s |
-
-## Troubleshooting
-
-### Model Fails to Load
-
-```
-Error: Failed to load model
-```
+**Problem**: App shows error when loading model
 
 **Solutions:**
-1. Verify the file is valid GGUF format
-2. Check available RAM (need 2x model size)
-3. Try a smaller model (1B or 3B)
-4. Check logcat for detailed errors
+1. Check your phone has enough RAM (need 2x model size)
+2. Try a smaller model (1B instead of 7B)
+3. Close other apps to free memory
+4. Restart your phone and try again
 
-### Slow Inference
+### "No GGUF Models Found"
+
+**Problem**: Model selector shows empty screen
 
 **Solutions:**
-1. Reduce context size in Settings
-2. Use Q4_K_M or Q4_K_S quantization
+1. Verify file ends with `.gguf` extension
+2. Check file is in Downloads folder or /sdcard/models/
+3. Tap "Refresh" button (top right)
+4. Use "Browse Custom Location" to find your file
+
+### "Analysis is Slow"
+
+**Problem**: AI generates tokens slowly
+
+**Solutions:**
+1. Use a smaller model (1B or 3B)
+2. Reduce context size in Settings
 3. Close background apps
-4. Use smaller model
+4. Use Q4_K_M quantization (faster than Q8)
 
-### Build Fails with CMake Error
+### "App Crashes"
 
-```
-CMake Error: Could not find NDK
-```
+**Problem**: App closes unexpectedly
 
 **Solutions:**
-1. Install NDK via Android Studio SDK Manager
-2. Set `ANDROID_NDK_HOME` environment variable
-3. Verify NDK version in `gradle.properties`
+1. Clear app data in Android settings
+2. Reinstall the app
+3. Try a different GGUF model
+4. Check logcat for error details
 
-### JNI Crash
+## 📁 File Locations
 
-```
-Fatal signal 11 (SIGSEGV)
-```
+| Type | Location |
+|------|----------|
+| Models (primary) | `/sdcard/Download/` |
+| Models (secondary) | `/sdcard/models/` |
+| App data | `/sdcard/Android/data/com.inspectavision.app/` |
+| Saved findings | Internal database (Room) |
 
-**Solutions:**
-1. Ensure model file is not corrupted
-2. Check model path has no special characters
-3. Update to latest llama.cpp version
+## 🔒 Privacy
 
-## Project Structure
+- **No internet required** - Everything runs locally
+- **No data collection** - Your inspections stay on your device
+- **No API keys** - No accounts, no subscriptions
+- **Open source** - Code is auditable on GitHub
 
-### Key Files
+## 📄 License
 
-| File | Purpose |
-|------|---------|
-| `LlamaCppBridge.kt` | Kotlin wrapper for JNI calls |
-| `jni_bridge.cpp` | Native JNI implementation |
-| `CMakeLists.txt` | Native library build config |
-| `AnalysisScreen.kt` | Main AI analysis UI |
-| `ModelSelectorScreen.kt` | Model file picker |
+This project is part of InspectaVision. See main repository for licensing.
 
-### Dependencies
+## 🙏 Acknowledgments
 
-- **Jetpack Compose**: Modern declarative UI
-- **CameraX**: Camera integration
-- **Coil**: Image loading
-- **Room**: Local database (for findings)
-- **Ktor**: HTTP client (for optional cloud sync)
-- **DataStore**: Preferences storage
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) - On-device LLM inference
+- [Hugging Face](https://huggingface.co/) - GGUF model hosting
 
-## License
+## 📞 Support
 
-This project is part of InspectaVision. See the main repository for licensing information.
+- **Issues**: [GitHub Issues](https://github.com/Ishabdullah/InspectaVision/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Ishabdullah/InspectaVision/discussions)
 
-## Contributing
+---
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
-
-## Acknowledgments
-
-- [llama.cpp](https://github.com/ggerganov/llama.cpp) - High-performance LLM inference
-- [Google Gemini](https://ai.google.dev/) - Optional cloud-based analysis
-- [Jetpack Compose](https://developer.android.com/jetpack/compose) - Modern Android UI
+**Built with ❤️ for offline-first AI inspection**

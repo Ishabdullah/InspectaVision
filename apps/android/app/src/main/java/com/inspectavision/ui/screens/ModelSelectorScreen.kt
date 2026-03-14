@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.inspectavision.llm.LlamaCppBridge
@@ -24,6 +25,7 @@ fun ModelSelectorScreen(
     onModelLoaded: () -> Unit,
     onNavigateBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var modelFiles by remember { mutableStateOf<List<File>>(emptyList()) }
     var selectedModel by remember { mutableStateOf<File?>(null) }
@@ -37,35 +39,57 @@ fun ModelSelectorScreen(
     }
     
     fun scanForModels() {
+        // Get external storage directories
+        val externalDirs = context.getExternalFilesDirs(null)
+        val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        
+        // Paths to scan for GGUF models
         val pathsToScan = listOf(
+            // Standard Downloads folder
+            downloadDir,
+            
+            // Downloads/models subfolder
+            File(downloadDir, "models"),
+            
+            // Root of external storage
+            Environment.getExternalStorageDirectory(),
+            
+            // Common model locations
             File(Environment.getExternalStorageDirectory(), "models"),
-            File(Environment.getExternalStorageDirectory(), "Download/models"),
-            File("/sdcard/models"),
+            
+            // App-specific external storage
+            externalDirs.firstOrNull()?.parentFile?.parentFile,
+            
+            // Custom path from user
             File(customPath).takeIf { customPath.isNotEmpty() && File(customPath).exists() }
-        ).filterNotNull()
+        ).filterNotNull().filter { it.exists() && it.isDirectory }
         
         val allModels = mutableListOf<File>()
         for (path in pathsToScan) {
-            if (path.exists() && path.isDirectory) {
-                allModels.addAll(llamaBridge.findModelFiles(path))
+            allModels.addAll(llamaBridge.findModelFiles(path))
+            // Also scan subdirectories up to 2 levels deep
+            path.listFiles { file -> file.isDirectory }?.forEach { dir ->
+                allModels.addAll(llamaBridge.findModelFiles(dir))
+                dir.listFiles { subDir -> subDir.isDirectory }?.forEach { subDir ->
+                    allModels.addAll(llamaBridge.findModelFiles(subDir))
+                }
             }
         }
-        modelFiles = allModels.distinctBy { it.absolutePath }
+        
+        // Remove duplicates and sort by name
+        modelFiles = allModels.distinctBy { it.absolutePath }.sortedBy { it.name.lowercase() }
     }
     
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Select Model") },
+                title = { Text("Load GGUF Model") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showPathDialog = true }) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = "Add Path")
-                    }
                     IconButton(onClick = { scanForModels() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
@@ -96,22 +120,53 @@ fun ModelSelectorScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
-                            Icons.Default.Info,
+                            Icons.Default.CloudOff,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Text(
-                            text = "GGUF Model Files",
+                            text = "100% Offline - No Server Required",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                     Text(
-                        text = "Select a GGUF format model file. Recommended: 7B or smaller for mobile devices.",
+                        text = "Place .gguf files in your Downloads folder or /sdcard/models. The app runs entirely on your device using llama.cpp.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
+                }
+            }
+            
+            // Quick access buttons
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { 
+                        customPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath
+                        scanForModels()
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Folder, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Downloads")
+                }
+                OutlinedButton(
+                    onClick = { 
+                        customPath = "/sdcard/models"
+                        scanForModels()
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Folder, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("/sdcard/models")
                 }
             }
             
@@ -139,14 +194,22 @@ fun ModelSelectorScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = "Place .gguf files in /sdcard/models or /sdcard/Download/models",
+                            text = "Download a GGUF model and place it in:\n• /sdcard/Download/\n• /sdcard/models/",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Button(onClick = { showPathDialog = true }) {
+                        Text(
+                            text = "Recommended: Llama-3.2-1B, Phi-3-mini, or Qwen2.5-1.5B (Q4_K_M quantization)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                        Button(
+                            onClick = { showPathDialog = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Icon(Icons.Default.FolderOpen, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Add Custom Path")
+                            Text("Browse Custom Location")
                         }
                     }
                 }
@@ -183,16 +246,17 @@ fun ModelSelectorScreen(
                             errorMessage = null
                             scope.launch {
                                 val success = llamaBridge.initialize(
-                                    context = android.content.ContextWrapper(
-                                        androidx.compose.ui.platform.LocalContext.current
-                                    ),
-                                    modelPath = selectedModel!!.absolutePath
+                                    context = context,
+                                    modelPath = selectedModel!!.absolutePath,
+                                    ctxSize = 4096,
+                                    threads = 4,
+                                    gpuLayers = 0
                                 )
                                 isLoading = false
                                 if (success) {
                                     onModelLoaded()
                                 } else {
-                                    errorMessage = "Failed to load model. Check logcat for details."
+                                    errorMessage = "Failed to load model. The file may be corrupted or too large for your device's RAM."
                                 }
                             }
                         },
@@ -211,7 +275,7 @@ fun ModelSelectorScreen(
                         } else {
                             Icon(Icons.Default.PlayArrow, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Load Model")
+                            Text("Load Model - ${formatFileSize(selectedModel!!.length())}")
                         }
                     }
                 }
@@ -238,23 +302,42 @@ fun ModelSelectorScreen(
         if (showPathDialog) {
             AlertDialog(
                 onDismissRequest = { showPathDialog = false },
-                title = { Text("Add Model Path") },
+                title = { Text("Browse to Folder") },
                 text = {
-                    OutlinedTextField(
-                        value = customPath,
-                        onValueChange = { customPath = it },
-                        label = { Text("Directory Path") },
-                        placeholder = { Text("/sdcard/MyModels") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Enter the full path to a folder containing GGUF models:",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        OutlinedTextField(
+                            value = customPath,
+                            onValueChange = { customPath = it },
+                            label = { Text("Folder Path") },
+                            placeholder = { Text("/sdcard/MyModels") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            isError = customPath.isNotEmpty() && !File(customPath).exists()
+                        )
+                        if (customPath.isNotEmpty() && !File(customPath).exists()) {
+                            Text(
+                                text = "Path does not exist",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
                 },
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            showPathDialog = false
-                            scanForModels()
-                        }
+                            if (File(customPath).exists() && File(customPath).isDirectory) {
+                                showPathDialog = false
+                                scanForModels()
+                            }
+                        },
+                        enabled = File(customPath).exists() && File(customPath).isDirectory
                     ) {
                         Text("Scan")
                     }
@@ -269,6 +352,15 @@ fun ModelSelectorScreen(
     }
 }
 
+fun formatFileSize(bytes: Long): String {
+    return when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        bytes < 1024 * 1024 * 1024 -> "${bytes / 1024 / 1024} MB"
+        else -> String.format("%.2f GB", bytes / 1024.0 / 1024.0 / 1024.0)
+    }
+}
+
 @Composable
 fun ModelFileCard(
     file: File,
@@ -276,7 +368,8 @@ fun ModelFileCard(
     onClick: () -> Unit
 ) {
     val fileSizeMb = file.length() / 1024.0 / 1024.0
-    val fileSizeStr = String.format("%.1f MB", fileSizeMb)
+    val fileSizeStr = formatFileSize(file.length())
+    val isLargeModel = fileSizeMb > 4000 // Warn if > 4GB
     
     Card(
         modifier = Modifier
@@ -309,39 +402,55 @@ fun ModelFileCard(
                         MaterialTheme.colorScheme.primary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
-                    }
+                    },
+                    modifier = Modifier.size(32.dp)
                 )
-                Column {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     Text(
                         text = file.name,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Medium,
-                        maxLines = 1
+                        maxLines = 2
                     )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = fileSizeStr,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (isLargeModel) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                shape = MaterialTheme.shapes.extraSmall
+                            ) {
+                                Text(
+                                    text = "Needs 8+ GB RAM",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
                     Text(
                         text = file.parent ?: "",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
                     )
                 }
             }
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                if (isSelected) {
-                    Icon(
-                        Icons.Default.CheckCircle,
-                        contentDescription = "Selected",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Text(
-                    text = fileSizeStr,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            if (isSelected) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = "Selected",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
