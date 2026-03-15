@@ -69,8 +69,8 @@ jobs:
         working-directory: apps/android/app/src/main/cpp
         run: |
           if [ ! -d "llama.cpp" ]; then
-            # Use very stable old version with simple API
-            git clone --depth 1 --branch b1487 https://github.com/ggerganov/llama.cpp.git
+            # Use stable version with simple API
+            git clone --depth 1 --branch b1229 https://github.com/ggerganov/llama.cpp.git
           else
             echo "llama.cpp already exists"
           fi
